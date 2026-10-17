@@ -90,7 +90,9 @@ Reload.
 
 ## Daten
 
-Alles steht in `todo.md`, normalem Markdown in Obsidian-Tasks-Syntax:
+Alles steht in `todo.md`, normalem Markdown in Obsidian-Tasks-Syntax. Die Datei
+ist nicht im Repo (`.gitignore`); als Vorlage dient `todo.example.md`
+(`cp todo.example.md todo.md`):
 
 ```
 - [ ] Präsentation vorbereiten #IMVERSE 🔺 ➕ 2026-09-02 📅 2026-09-18
