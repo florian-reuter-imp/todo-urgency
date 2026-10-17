@@ -1,0 +1,14 @@
+{
+  "name": "Todo",
+  "short_name": "Todo",
+  "description": "Klartext-Aufgaben mit automatischer Priorisierung",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "background_color": "#f6f6f4",
+  "theme_color": "#2f6f4e",
+  "icons": [
+    { "src": "/static/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

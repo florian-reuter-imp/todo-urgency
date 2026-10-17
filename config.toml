@@ -1,0 +1,73 @@
+# Konfiguration des Todo-Tools. Alle Werte sind optional -
+# fehlt einer, greift der Default aus app/config.py bzw. app/scorer.py.
+
+[data]
+# Pfad zur Klartextdatei. Relativ = relativ zu diesem Projektordner.
+# Der Projektordner liegt bereits in OneDrive, die Datei wird also
+# automatisch mitsynchronisiert. Fuer einen anderen Ort einfach einen
+# absoluten Pfad eintragen - am Code aendert sich nichts.
+file = "todo.md"
+
+[server]
+host = "127.0.0.1"
+port = 8777
+# Server beendet sich nach so vielen Minuten ohne offenen Tab.
+idle_shutdown_minutes = 20
+
+[window]
+# Sollgroesse des App-Fensters beim Start: Breite,Hoehe in Pixeln.
+# Darunter wird die Oberflaeche kompakter (kleinere Abstaende, weniger
+# Beschriftung in der Matrix), statt Scrollbalken zu zeigen. Sinnvolles
+# Minimum liegt bei etwa 900x620; darunter bleibt alles bedienbar, die
+# Matrix wird aber knapp.
+size = "1240,860"
+
+# ---------------------------------------------------------------------
+# Optionale Features. "false" heisst: das Feld wird weiter geparst und
+# beim Speichern unveraendert erhalten, aber vom Scorer ignoriert und in
+# der Oberflaeche ausgeblendet. Alles aus = der einfache Default-Weg
+# (eine sortierte Liste, Titel + Datum + Prioritaet).
+# ---------------------------------------------------------------------
+[features]
+effort = true        # Aufwandsfeld ⏱ und der daraus abgeleitete Horizont
+grouping = true      # Umschalter "nach Projekt gruppieren"
+snooze = true        # 🛫 nicht vor: zurueckgestellte Aufgaben ausblenden
+recurrence = true    # 🔁 beim Abhaken die naechste Instanz anlegen
+done_dates = true    # ✅ Datum des Abhakens mitschreiben
+dependencies = false # noch nicht implementiert
+
+# ---------------------------------------------------------------------
+# Urgency-Gewichte. Score = Dringlichkeit + Wichtigkeit.
+#   Dringlichkeit (X-Achse) = due + age
+#   Wichtigkeit   (Y-Achse) = priority + tags
+# ---------------------------------------------------------------------
+
+[urgency.due]
+coefficient = 12.0          # Gesamtwirkung der Faelligkeit
+overdue_days_for_max = 7    # ab 7 Tagen ueberfaellig: voller Ausschlag
+future_days_for_min = 14    # ab 14 Tagen in der Zukunft: Minimum
+min_factor = 0.2
+
+[urgency.priority]
+highest = 9.0   # 🔺
+high    = 6.0   # ⏫
+medium  = 3.9   # 🔼
+none    = 1.95  # ohne Marker - bewusst ueber "low"
+low     = 0.0   # 🔽
+lowest  = -1.8  # ⏬
+
+[urgency.effort]
+days_per_hour = 1.5   # je Stunde Aufwand beginnt die Rampe so viele Tage frueher
+max_extra_days = 45   # Deckel fuer diese Verschiebung
+
+[urgency.age]
+coefficient = 2.0   # alte Aufgaben steigen langsam wieder auf
+max_days = 365
+
+[urgency.tags]
+coefficient = 1.0   # Aufgabe gehoert zu einem Projekt (#tag)
+
+[urgency.thresholds]
+# Trennlinien der Eisenhower-Matrix.
+urgency = 6.0
+importance = 3.0

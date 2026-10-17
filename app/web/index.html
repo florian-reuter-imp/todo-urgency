@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#2f6f4e">
+  <title>Todo</title>
+  <link rel="manifest" href="/static/manifest.webmanifest">
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <!-- Chrome: feste Höhe, scrollt nie. -->
+  <div class="chrome">
+    <header>
+      <h1>Todo</h1>
+      <nav class="tabs">
+        <button class="tab is-active" data-view="list">Liste</button>
+        <button class="tab" data-view="matrix">Matrix</button>
+      </nav>
+      <span class="history">
+        <button id="undo" class="ghost" disabled title="Rückgängig (Strg+Z)">↶</button>
+        <button id="redo" class="ghost" disabled title="Wiederholen (Strg+Y)">↷</button>
+      </span>
+      <button id="weights-toggle" class="ghost" title="Gewichte der Formel anpassen">⚙ Gewichte</button>
+      <span id="status" class="status"></span>
+    </header>
+
+    <form id="add-form" class="add">
+      <input id="add-text" type="text" placeholder="Neue Aufgabe &hellip;  (#tag direkt mitschreiben)" autocomplete="off" required>
+      <input id="add-due" type="date" title="Fällig am">
+      <select id="add-priority" title="Priorität">
+        <option value="none">– Priorität –</option>
+        <option value="highest">🔺 höchste</option>
+        <option value="high">⏫ hoch</option>
+        <option value="medium">🔼 mittel</option>
+        <option value="low">🔽 niedrig</option>
+        <option value="lowest">⏬ niedrigste</option>
+      </select>
+      <span id="add-effort" data-feature="effort"></span>
+      <button type="submit">Hinzufügen</button>
+      <details class="more">
+        <summary>mehr</summary>
+        <label data-feature="snooze">🛫 nicht vor <input id="add-start" type="date"></label>
+        <span data-feature="recurrence">🔁 <span id="add-recurrence"></span></span>
+      </details>
+    </form>
+
+    <div class="controls">
+      <label class="toggle"><input type="checkbox" id="show-done"> erledigte</label>
+      <label class="toggle" data-feature="snooze"><input type="checkbox" id="show-snoozed"> zurückgestellte</label>
+      <label class="toggle" data-feature="grouping"><input type="checkbox" id="group-tags"> nach Projekt</label>
+      <label class="toggle" data-feature="effort">
+        höchstens
+        <select id="effort-filter">
+          <option value="">beliebiger Aufwand</option>
+          <option value="15">15 min</option>
+          <option value="30">30 min</option>
+          <option value="60">1 h</option>
+          <option value="120">2 h</option>
+          <option value="240">4 h</option>
+          <option value="480">1 Arbeitstag</option>
+        </select>
+      </label>
+      <div class="timetravel" data-view-only="matrix">
+        <label for="time-slider">Zeitreise</label>
+        <input id="time-slider" type="range" min="0" max="28" step="1" value="0">
+        <output id="time-label">heute</output>
+      </div>
+    </div>
+
+    <div id="banner" class="banner" hidden></div>
+  </div>
+
+  <!-- Ansichtsbereich: nimmt den Rest. Die Liste scrollt, die Matrix skaliert. -->
+  <main>
+    <section id="view-list"></section>
+    <section id="view-matrix" hidden>
+      <div class="matrix-wrap">
+        <svg id="matrix" role="img" aria-label="Eisenhower-Matrix"></svg>
+      </div>
+      <div id="matrix-detail" class="detail"></div>
+    </section>
+
+    <!-- Overlay: verdrängt die Matrix nicht, scrollt selbst. -->
+    <section id="weights" class="weights sheet" hidden>
+      <div class="weights-head">
+        <strong>Gewichte</strong>
+        <div class="modes">
+          <button id="mode-simple" class="mode is-active" type="button">Einfach</button>
+          <button id="mode-advanced" class="mode" type="button">Erweitert</button>
+        </div>
+        <span id="weights-state" class="hint"></span>
+        <span class="spacer"></span>
+        <button id="weights-reset" type="button" class="ghost">Auslieferungswerte</button>
+        <button id="weights-save" type="button" disabled>Übernehmen</button>
+        <button id="weights-close" type="button" class="icon-btn" title="Schließen">✕</button>
+      </div>
+      <div id="weights-body" class="weights-body"></div>
+      <p id="weights-note" class="hint"></p>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
