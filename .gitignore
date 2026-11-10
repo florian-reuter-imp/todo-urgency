@@ -1,5 +1,22 @@
-__pycache__/
-*.pyc
-
-# Persoenliche Daten, nur lokal
+# ---------------------------------------------------------------------
+# Arbeitsdaten. Die Aufgabendatei gehoert dem Benutzer, nicht dem
+# Werkzeug - sie steht bewusst nicht in der Versionsverwaltung.
+# Die Syntax zeigt stattdessen todo.example.md.
+# ---------------------------------------------------------------------
 todo.md
+
+# Von app/icon.py erzeugt (python -m app --shortcut legt es an).
+todo.ico
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Editoren und Betriebssystem
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+~$*

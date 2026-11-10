@@ -13,7 +13,7 @@ CONFIG_PATH = ROOT / "config.toml"
 
 DEFAULTS: dict = {
     "data": {"file": "todo.md"},
-    "server": {"host": "127.0.0.1", "port": 8777, "idle_shutdown_minutes": 20},
+    "server": {"host": "127.0.0.1", "port": 8777, "idle_shutdown_minutes": 0},
     # Sollgroesse des App-Fensters beim Start. Darunter wird die
     # Oberflaeche kompakter, statt Scrollbalken zu zeigen.
     "window": {"size": "1240,860"},

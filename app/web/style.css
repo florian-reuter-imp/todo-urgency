@@ -233,6 +233,37 @@ input, select {
 .track { display: flex; flex-direction: column; gap: 2px; }
 .scale-ends { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); }
 
+/* --- Fenster- und Servermenü ---------------------------------------- */
+.menu-wrap { position: relative; display: inline-flex; }
+.menu {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 30;
+  min-width: 230px; display: flex; flex-direction: column;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: 0 10px 28px #00000038;
+  padding: 4px; overflow: hidden;
+}
+.menu button {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+  background: none; border: 0; color: var(--ink); font: inherit;
+  text-align: left; padding: 7px 10px; border-radius: 6px; cursor: pointer;
+}
+.menu button:hover { background: var(--line); }
+.menu button small { color: var(--muted); font-size: 11.5px; }
+.menu.popup { position: fixed; min-width: 190px; }
+/* Das Ergebnis liegt weiter in der Vergangenheit - sichtbar, nicht versteckt. */
+.menu button small.still-overdue { color: var(--do); }
+.menu button[data-action="quit"]:hover { background: var(--do); color: #fff; }
+.menu button[data-action="quit"]:hover small { color: #ffffffcc; }
+
+/* Meldung, wenn der Server weg ist - deckt alles ab, nichts ist mehr nutzbar. */
+.gone {
+  position: fixed; inset: 0; z-index: 40;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; background: var(--bg); color: var(--muted); text-align: center;
+  padding: var(--gutter);
+}
+.gone strong { color: var(--ink); font-size: 1.1em; }
+
 .history { display: flex; gap: 2px; }
 .history .ghost { padding: 5px 9px; font-size: 15px; line-height: 1; }
 .history .ghost:disabled { opacity: .4; cursor: default; }
@@ -295,19 +326,31 @@ input, select {
 }
 .detail b { color: var(--ink); font-weight: 600; }
 
-/* --- Kompaktstufen: lieber enger als Scrollbalken ------------------- */
+/* --- Kompaktstufen --------------------------------------------------
+ * Sie gelten NUR fuer die Matrix. Dort ist Hoehe echt knapp, weil das
+ * Diagramm den Rest fuellen muss. Die Liste scrollt ohnehin - dort die
+ * Kopfzeile einzuklappen, nimmt Bedienelemente weg, ohne irgendetwas zu
+ * gewinnen, und zwar genau dann, wenn man das Fenster auf den Inhalt
+ * zusammenzieht.
+ */
 @media (max-height: 780px) {
-  :root { --row-gap: 7px; }
-  header { padding: 9px 0 6px; }
-  .more { display: none; }     /* Zusatzfelder weichen zuerst */
+  body.view-matrix { --row-gap: 7px; }
+  body.view-matrix header { padding: 9px 0 6px; }
+  body.view-matrix .more { display: none; }   /* Zusatzfelder weichen zuerst */
 }
 @media (max-height: 660px) {
-  :root { --row-gap: 4px; }
-  body { font-size: 14px; }
-  header { padding: 6px 0 5px; }
-  h1 { display: none; }        /* der Titel steht im Fenstertitel */
-  input, select { padding: 4px 7px; }
-  .add button { padding: 4px 12px; }
+  body.view-matrix { --row-gap: 4px; font-size: 14px; }
+  body.view-matrix header { padding: 6px 0 5px; }
+  body.view-matrix h1 { display: none; }      /* steht ohnehin im Fenstertitel */
+  body.view-matrix input, body.view-matrix select { padding: 4px 7px; }
+  body.view-matrix .add button { padding: 4px 12px; }
+}
+/* In der Liste erst, wenn es wirklich eng wird. */
+@media (max-height: 520px) {
+  body.view-list { --row-gap: 5px; }
+  body.view-list header { padding: 8px 0 6px; }
+  body.view-list h1 { display: none; }
+  body.view-list .more { display: none; }
 }
 @media (max-width: 860px) {
   .timetravel output { min-width: 0; }

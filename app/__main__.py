@@ -24,7 +24,7 @@ import urllib.request
 import webbrowser
 from pathlib import Path
 
-from . import server
+from . import autostart, server
 from .config import fingerprint
 from . import config
 
@@ -56,6 +56,80 @@ def _find_chromium() -> str | None:
         if found:
             return found
     return None
+
+
+#: Titel des App-Fensters - entspricht dem <title> der Seite. Ein normaler
+#: Browser-Tab hiesse "Todo - Profil - Microsoft Edge" und wird so nicht
+#: faelschlich mitgefangen.
+WINDOW_TITLE = "Todo"
+
+
+def focus_existing(title: str = WINDOW_TITLE) -> bool:
+    """Vorhandenes App-Fenster nach vorn holen. True, wenn eines da war.
+
+    Ein zweites Fenster auf dieselbe Datei bringt nichts und ist nach
+    einem Neustart sogar gefaehrlich, weil es noch mit altem JavaScript
+    laeuft. Also verhalten wir uns wie jedes andere Programm: Klick aufs
+    Symbol holt das offene Fenster.
+    """
+    if os.name != "nt":
+        return False
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.windll.user32
+        found: list[int] = []
+
+        @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+        def visit(hwnd, _param):
+            if not user32.IsWindowVisible(hwnd):
+                return True
+            length = user32.GetWindowTextLengthW(hwnd)
+            if length:
+                buffer = ctypes.create_unicode_buffer(length + 1)
+                user32.GetWindowTextW(hwnd, buffer, length + 1)
+                if buffer.value == title:
+                    found.append(hwnd)
+            return True
+
+        user32.EnumWindows(visit, 0)
+        if not found:
+            return False
+
+        handle = found[0]
+        user32.ShowWindow(handle, 9)          # SW_RESTORE, falls minimiert
+
+        # SetForegroundWindow allein genuegt nicht: Windows erlaubt es nur
+        # Prozessen mit Vordergrundrecht. Der uebliche Weg ist, sich kurz
+        # an den Eingabe-Thread des aktuellen Vordergrundfensters zu
+        # haengen - dann gilt das Recht auch fuer uns.
+        foreground = user32.GetForegroundWindow()
+        ours = user32.GetWindowThreadProcessId(handle, None)
+        theirs = user32.GetWindowThreadProcessId(foreground, None)
+        if theirs and theirs != ours:
+            user32.AttachThreadInput(theirs, ours, True)
+            user32.SetForegroundWindow(handle)
+            user32.AttachThreadInput(theirs, ours, False)
+        else:
+            user32.SetForegroundWindow(handle)
+
+        if user32.GetForegroundWindow() != handle:
+            # Zweiter Weg: das, was die Taskleiste selbst benutzt.
+            try:
+                user32.SwitchToThisWindow(handle, True)
+            except Exception:
+                pass
+        if user32.GetForegroundWindow() != handle:
+            # Letzter Versuch: kurz nach ganz oben und gleich wieder zurueck.
+            HWND_TOPMOST, HWND_NOTOPMOST = -1, -2
+            NOMOVE_NOSIZE = 0x0002 | 0x0001
+            user32.SetWindowPos(handle, HWND_TOPMOST, 0, 0, 0, 0, NOMOVE_NOSIZE)
+            user32.SetWindowPos(handle, HWND_NOTOPMOST, 0, 0, 0, 0, NOMOVE_NOSIZE)
+            user32.SetForegroundWindow(handle)
+        return True
+    except Exception:
+        return False
 
 
 def open_window(url: str, size: str = "1280,900", app_mode: bool = True) -> str:
@@ -108,6 +182,32 @@ def _stop_running(url: str, host: str, port: int, timeout: float = 8.0) -> bool:
     return False
 
 
+def _handle_autostart(args) -> int:
+    try:
+        if args.autostart == "install":
+            where = autostart.install(args.with_window)
+            print("Autostart eingerichtet:")
+            print("  " + where)
+            print("  Gestartet wird " + ("Server und Fenster." if args.with_window
+                                         else "nur der Server, ohne Fenster."))
+            print("Entfernen: python -m app --autostart remove")
+            if os.name == "nt":
+                print("Oder im Task-Manager unter 'Autostart' abschalten.")
+        elif args.autostart == "remove":
+            print("Autostart entfernt." if autostart.remove()
+                  else "Es war kein Autostart eingerichtet.")
+        else:
+            info = autostart.status()
+            print("Autostart: " + ("eingerichtet" if info["installed"] else "nicht eingerichtet"))
+            for key in ("path", "target", "arguments", "working_dir"):
+                if info.get(key):
+                    print(f"  {key:12} {info[key]}")
+    except Exception as exc:
+        print(f"Autostart fehlgeschlagen: {type(exc).__name__}: {exc}")
+        return 1
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="todo", description="Persoenliches Todo-Tool")
     parser.add_argument(
@@ -118,17 +218,51 @@ def main(argv: list[str] | None = None) -> int:
                         help="Kurzform fuer --window none")
     parser.add_argument("--size", help="Fenstergroesse, z.B. 1280,900 (Default aus config.toml)")
     parser.add_argument("--port", type=int, help="Port ueberschreiben")
+    parser.add_argument("--new-window", action="store_true",
+                        help="Zweites Fenster oeffnen, statt das vorhandene zu holen")
     parser.add_argument("--restart", action="store_true",
                         help="Laufende Instanz beenden und neu starten")
+    parser.add_argument("--stop", action="store_true",
+                        help="Laufende Instanz beenden")
+    parser.add_argument("--shortcut", action="store_true",
+                        help="Verknuepfung zum Oeffnen auf dem Desktop anlegen")
+    parser.add_argument("--autostart", choices=("install", "remove", "status"),
+                        help="Beim Anmelden mitstarten einrichten, entfernen oder pruefen")
+    parser.add_argument("--with-window", action="store_true",
+                        help="Mit --autostart install: beim Anmelden auch das Fenster oeffnen")
     args = parser.parse_args(argv)
+
+    if args.autostart:
+        return _handle_autostart(args)
+    if args.shortcut:
+        try:
+            print("Verknuepfung angelegt:")
+            print("  " + autostart.desktop_shortcut())
+            print("Zum Anheften: Rechtsklick auf das Symbol → "
+                  "\"An Taskleiste anheften\".")
+        except Exception as exc:
+            print(f"Fehlgeschlagen: {exc}")
+            return 1
+        return 0
 
     mode = "none" if args.no_browser else args.window
     cfg = config.load()
     size = args.size or cfg["window"]["size"]
-    if args.port:
-        cfg["server"]["port"] = args.port
     host, port = cfg["server"]["host"], cfg["server"]["port"]
+    if args.port:
+        port = args.port
     url = f"http://{host}:{port}/"
+
+    if args.stop:
+        if not _is_running(host, port):
+            print(f"Es laeuft nichts auf Port {port}.")
+            return 0
+        if _stop_running(url, host, port):
+            print("Server beendet.")
+            return 0
+        print("Der Server reagiert nicht. Prozess 'pythonw -m app' von Hand beenden.")
+        return 1
+    cfg["server"]["port"] = port
 
     # Laeuft schon eine Instanz? Dann nur ein Fenster oeffnen, statt am
     # belegten Port zu scheitern - ausser der laufende Server arbeitet mit
@@ -142,7 +276,10 @@ def main(argv: list[str] | None = None) -> int:
         if not stale:
             print(f"Laeuft bereits: {url}")
             if mode != "none":
-                open_window(url, size, mode == "app")
+                if not args.new_window and focus_existing():
+                    print("Vorhandenes Fenster nach vorn geholt.")
+                else:
+                    open_window(url, size, mode == "app")
             return 0
 
         grund = "angefordert" if args.restart else "Code hat sich geaendert"
@@ -161,8 +298,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if mode != "none":
         def launch() -> None:
-            print("Geoeffnet als:", open_window(url, size, mode == "app"))
-        threading.Timer(0.4, launch).start()
+            if not args.new_window and focus_existing():
+                print("Vorhandenes Fenster nach vorn geholt; es laedt sich selbst neu.")
+            else:
+                print("Geoeffnet als:", open_window(url, size, mode == "app"))
+        threading.Timer(0.8, launch).start()
 
     try:
         httpd.serve_forever()

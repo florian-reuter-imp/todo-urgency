@@ -11,10 +11,24 @@ Dependencies — nur Python 3.11+ (Stdlib). Läuft unter Windows und Linux.
 | Linux / macOS | `./todo.sh` |
 | überall | `python -m app` |
 
-Der Starter hebt den lokalen Server an, öffnet die Oberfläche und **beendet sich
-nach 20 Minuten ohne offenes Fenster** von selbst — kein Hintergrunddienst, aber
-auch kein manuelles Starten. Ein zweiter Doppelklick öffnet nur ein weiteres
-Fenster, statt am belegten Port zu scheitern.
+Der Starter hebt den lokalen Server an und öffnet die Oberfläche. Der Server
+**läuft durch** und ist wie ein Kalender den ganzen Tag bereit; ein Klick öffnet
+das Fenster sofort.
+
+Ist bereits ein Fenster offen, wird **dieses nach vorn geholt** statt ein zweites
+aufzumachen — wie bei jedem anderen Programm. Zwei Fenster auf dieselbe Datei
+bringen nichts, und nach einem Neustart liefe eines davon womöglich noch mit
+altem JavaScript. `--new-window` öffnet trotzdem ein zweites, falls man die Liste
+und die Matrix nebeneinander legen will.
+
+Offene Fenster merken beim Heartbeat, wenn der Server inzwischen ein anderer
+Prozess ist (`instance` aus `GET /api/version`), und laden sich dann selbst neu —
+außer man tippt gerade in einem Bearbeitungsfeld oder zieht einen Punkt.
+
+Soll er sich doch von selbst beenden, setzt `idle_shutdown_minutes` in
+`config.toml` die Wartezeit ohne offenes Fenster; `0` heißt „läuft durch" und ist
+der Standard. Zusammen mit dem Autostart ergibt ein Wert > 0 wenig Sinn — der
+Server wäre dann bis zum nächsten Anmelden weg.
 
 ### App-Fenster statt Browser-Tab
 
@@ -30,6 +44,65 @@ python -m app --window none        # nur Server
 python -m app --size 1600,1000     # Startgröße
 python -m app --restart            # laufende Instanz ersetzen
 ```
+
+### Symbol zum Öffnen
+
+```
+python -m app --shortcut
+```
+
+Legt `Todo.lnk` auf dem Desktop an, mit eigenem Icon. Rechtsklick → „An Taskleiste
+anheften", dann ist das Tool dauerhaft sichtbar und einen Klick entfernt. Die
+Verknüpfung zeigt auf `pythonw -m app` und funktioniert in beiden Fällen: läuft
+der Server, geht nur ein Fenster auf; läuft er nicht, wird er vorher gestartet.
+
+Bewusst **kein Tray-Symbol**: Windows 11 versteckt neue Infobereich-Symbole
+standardmäßig hinter dem Pfeil (auf diesem Rechner sind von 67 registrierten
+Symbolen genau eines dauerhaft sichtbar). Als Weg zum Öffnen taugt das nicht; ein
+angeheftetes Taskleisten-Symbol schon.
+
+Das Icon wird von [app/icon.py](app/icon.py) in reinem Python erzeugt — ein ICO mit
+sieben Größen von 16 bis 256 px, ohne Pillow.
+
+### Fenster und Server steuern
+
+Das ⏻-Menü in der Kopfzeile kann dreierlei:
+
+| | Wirkung |
+|---|---|
+| **Fenster schließen** | nur das Fenster; der Server läuft weiter und ist sofort wieder erreichbar |
+| **Server neu starten** | lädt geänderten Code; die Seite wartet, bis der Nachfolger da ist, und lädt neu |
+| **Server beenden** | mit Rückfrage; danach ist das Tool bis zum nächsten Start weg |
+
+Von außen geht dasselbe mit `python -m app --stop` und `--restart`.
+
+Der Neustart startet einen losgelösten Nachfolger mit `--restart`, der die alte
+Instanz beendet und den Port übernimmt. Die Oberfläche merkt sich dabei die
+`instance` aus `GET /api/version` — eine Kennung, die bei jedem Prozess wechselt.
+Ohne sie würde sie neu laden, sobald *irgendjemand* antwortet, und das ist in den
+ersten Sekunden noch der sterbende alte Server.
+
+### Beim Anmelden mitstarten
+
+```
+python -m app --autostart install          # nur der Server, ohne Fenster
+python -m app --autostart install --with-window
+python -m app --autostart status
+python -m app --autostart remove
+```
+
+Eingerichtet wird bewusst **nur der Server**: beim Anmelden reißt dann kein
+Fenster ungefragt auf, das Tool steht aber bereit und öffnet sich auf Klick ohne
+Verzögerung.
+
+| Plattform | Mechanismus |
+|---|---|
+| Windows | Verknüpfung in `%APPDATA%\…\Start Menu\Programs\Startup`, startet `pythonw` (kein Konsolenfenster) |
+| Linux | systemd-Unit im Benutzerkontext (`~/.config/systemd/user/todo.service`), ungetestet |
+
+Die Windows-Variante ist im Explorer sichtbar und lässt sich im Task-Manager unter
+„Autostart" abschalten — man braucht dieses Werkzeug also nicht, um sie wieder
+loszuwerden.
 
 ### Neustart
 
@@ -80,19 +153,27 @@ Trennlinien aber immer deutlich im Bild. Punktbeschriftungen weichen sowohl
 anderen Beschriftungen als auch fremden Punkten aus; findet sich keine freie Lage,
 bleibt ein Punkt lieber unbeschriftet als überdruckt.
 
-Darunter greifen Kompaktstufen (ab 780 px Höhe weniger Abstand und kein
-„mehr"-Block, ab 660 px kleinere Schrift und kein Titel) statt Scrollbalken.
-Unterhalb von etwa 900×620 wird die Matrix knapp — dann hilft nur, das Fenster
-wieder größer zu ziehen; eine Mindestgröße kann eine Webseite nicht erzwingen.
+Darunter greifen Kompaktstufen statt Scrollbalken — aber **nur in der
+Matrixansicht**: ab 780 px weniger Abstand und kein „mehr"-Block, ab 660 px
+kleinere Schrift und kein Titel. Dort ist Höhe wirklich knapp, weil das Diagramm
+den Rest füllen muss.
+
+Die Liste scrollt ohnehin, dort bleibt die Kopfzeile bis 520 px vollständig
+stehen. Sonst klappt sie zusammen, während man das Fenster gerade auf den Inhalt
+zuzieht — und nimmt Bedienelemente weg, ohne Platz zu gewinnen.
+
+Unterhalb von etwa 900×620 wird die Matrix knapp; dann hilft nur, das Fenster
+wieder größer zu ziehen. Eine Mindestgröße kann eine Webseite nicht erzwingen.
+
+Im ⏻-Menü schneidet **„Fenster an Inhalt anpassen"** die Fensterhöhe in einem
+Schritt auf die Liste zu.
 
 `#list` und `#matrix` in der Adresse wählen die Ansicht, sie übersteht damit einen
 Reload.
 
 ## Daten
 
-Alles steht in `todo.md`, normalem Markdown in Obsidian-Tasks-Syntax. Die Datei
-ist nicht im Repo (`.gitignore`); als Vorlage dient `todo.example.md`
-(`cp todo.example.md todo.md`):
+Alles steht in `todo.md`, normalem Markdown in Obsidian-Tasks-Syntax:
 
 ```
 - [ ] Präsentation vorbereiten #IMVERSE 🔺 ➕ 2026-09-02 📅 2026-09-18
@@ -113,12 +194,44 @@ ist nicht im Repo (`.gitignore`); als Vorlage dient `todo.example.md`
 `⏱` ist kein offizielles Tasks-Feld; Obsidian zeigt es schlicht als Text in der
 Beschreibung an, es geht also nichts verloren.
 
-### Zurückstellen (`🛫`)
+### Drei Wege, Druck wegzunehmen
+
+Sie sehen sich ähnlich und machen Verschiedenes. Die Unterscheidung ist das Herz
+des Werkzeugs:
+
+| | was sich ändert | wann |
+|---|---|---|
+| **Zurückstellen** `🛫` | nur die Sichtbarkeit, die Frist bleibt | „Die Frist steht, ich will nur jetzt noch nicht hinsehen." |
+| **Aufschieben** `⏭` | die Frist selbst, in ganzen Wochen | „Ich bin in Verzug und erkaufe mir ehrlich mehr Zeit." |
+| **Wiederholung** `🔁` | nächste Instanz beim Abhaken | „Termin war, nächster in einer Iteration." |
+
+#### Zurückstellen (`🛫`)
 
 Eine Aufgabe mit Startdatum in der Zukunft **verschwindet** aus Liste und Matrix,
 statt abgewertet zu werden — was man nicht anfangen kann, ist Rauschen. Der Knopf
-`🛫` in der Zeile stellt eine Woche zurück; „zurückgestellte zeigen" blendet sie
-wieder ein, dann mit ihrem ungeschönten Score.
+`🛫` stellt eine Woche zurück, „zurückgestellte zeigen" holt sie zurück. Der Score
+bleibt dabei **unverändert**; sie kommt am Startdatum von selbst wieder, dann
+meist dringlicher als sie ging.
+
+#### Aufschieben (`⏭`)
+
+Verschiebt die **Frist** um 1, 2 oder 4 Wochen — immer gerechnet ab der **alten
+Frist**, nicht ab heute. Das erhält den Wochentag: der Donnerstag des Jour fixe
+bleibt ein Donnerstag. Von heute aus gerechnet landete der Termin auf einem
+beliebigen Tag, nur weil man zufällig an einem Freitag geklickt hat.
+
+Angeboten werden bewusst **nur ganze Wochen**. Wer zwei Tage im Verzug ist, findet
+keinen passenden Knopf und bleibt im Überfällig-Modus — richtig so, denn das ist
+der Fall, in dem man heute noch nachliefert. Erst eine ganze Woche ist eine
+Neuverhandlung, die den Druck senken darf. Die Granularität des Bedienelements
+trägt die Norm, statt sie zu erklären.
+
+Bei langem Verzug landet „+1 Woche" weiter in der Vergangenheit. Das wird **nicht**
+wegkorrigiert, sondern gezeigt: Das Menü nennt zu jeder Stufe das Ergebnis vorab
+(`+1 Woche → Mo 26.10. · 11 Tage überfällig`, rot wenn weiter überfällig). Dann
+entscheidet man selbst — nochmal klicken, größere Stufe, oder im Bearbeiten-Feld
+ein Datum setzen. Aufgaben ohne `📅` haben den Knopf nicht: was keine Frist hat,
+kann nicht länger dauern.
 
 ### Wiederholungen (`🔁`)
 
@@ -289,7 +402,7 @@ dafür gibt es die Vorschau und „Auslieferungswerte“.
 python -m unittest discover tests
 ```
 
-107 Tests, nur Stdlib. Sie deckten beim Schreiben zwei stille Datenverluste auf:
+136 Tests, nur Stdlib. Sie deckten beim Schreiben zwei stille Datenverluste auf:
 die Rohzeilen-Bearbeitung schrieb nicht, und Text **nach** einem Datumsfeld
 (`📅 2026-10-20 #projekt`) ging beim Parsen verloren. Beide sind als
 Regressionstests festgehalten.
@@ -315,10 +428,12 @@ Drei unabhängig austauschbare Schichten:
 | [app/codec.py](app/codec.py) | `TaskCodec`: Rohtext ↔ `Task`-Objekte |
 | [app/scorer.py](app/scorer.py) | `UrgencyScorer`: Score, Achsen, Horizont |
 | [app/recurrence.py](app/recurrence.py) | Wiederholungsregeln ↔ nächstes Datum |
+| [app/icon.py](app/icon.py) | erzeugt `todo.ico` ohne externe Bibliothek |
+| [app/autostart.py](app/autostart.py) | Verknüpfungen und Autostart |
 | [app/config.py](app/config.py) | `config.toml` lesen und kommentarerhaltend schreiben |
 | [app/server.py](app/server.py) | HTTP-API + Auslieferung der Oberfläche |
 | [app/web/](app/web/) | Vanilla-JS-Oberfläche, kein Build-Schritt |
-| [tests/](tests/) | 107 Tests, `python -m unittest discover tests` |
+| [tests/](tests/) | 136 Tests, `python -m unittest discover tests` |
 
 Die Feld-Emojis in `codec.py` stehen bewusst als Escape-Sequenzen (`"\U0001f4c5"`)
 und der Block ist reines ASCII — sonst zerschießt irgendwann ein Werkzeug mit

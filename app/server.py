@@ -8,6 +8,9 @@ Rohformat und nie den Speicherort.
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -212,7 +215,25 @@ class TaskService:
                     )
                 labels.append("in der Matrix verschoben")
 
-            # Snooze-Schnellknopf: "ab heute + N Tagen".
+            # Aufschieben: die Frist selbst wandert, immer von der ALTEN
+            # Frist aus. Das erhaelt den Wochentag - bei terminbezogenen
+            # Aufgaben ist der Donnerstag des Jour fixe wieder ein
+            # Donnerstag. Von heute aus gerechnet waere es ein beliebiger
+            # Tag, nur weil man zufaellig an einem Freitag geklickt hat.
+            if "postpone_weeks" in changes:
+                weeks = int(changes["postpone_weeks"])
+                if task.due is None:
+                    raise ValueError(
+                        "Ohne Fälligkeitsdatum lässt sich nichts aufschieben."
+                    )
+                if weeks < 1:
+                    raise ValueError("Aufschieben geht nur um ganze Wochen.")
+                task.due += timedelta(weeks=weeks)
+                labels.append(
+                    f"um {weeks} Woche{'n' if weeks != 1 else ''} aufgeschoben"
+                )
+
+            # Zurueckstellen: nur die Sichtbarkeit, die Frist bleibt stehen.
             start = changes.get("start", _KEEP)
             if "snooze_days" in changes:
                 labels.append(
@@ -440,6 +461,8 @@ class Handler(BaseHTTPRequestHandler):
     activity: "Activity"
     #: Codestand beim Start dieses Prozesses (siehe /api/version).
     fingerprint: str = ""
+    #: Kennung dieses Prozesses, wechselt bei jedem Neustart.
+    instance: str = ""
     server_version = "TodoTool/0.1"
 
     def log_message(self, fmt: str, *args) -> None:
@@ -502,10 +525,16 @@ class Handler(BaseHTTPRequestHandler):
                 if path == "/api/config":
                     return self._json(self.service.get_config())
                 if path == "/api/version":
-                    # Der beim START eingelesene Stand, nicht der aktuelle:
-                    # sonst meldet ein veralteter Prozess den Fingerabdruck
-                    # der neuen Dateien und gilt faelschlich als aktuell.
-                    return self._json({"fingerprint": self.fingerprint})
+                    # fingerprint: der beim START eingelesene Codestand, nicht
+                    #   der aktuelle - sonst meldet ein veralteter Prozess den
+                    #   Fingerabdruck der neuen Dateien und gilt als aktuell.
+                    # instance: eindeutig je Prozess. Nur daran erkennt die
+                    #   Oberflaeche nach einem Neustart, dass wirklich der
+                    #   NACHFOLGER antwortet und nicht noch der alte Server.
+                    return self._json({
+                        "fingerprint": self.fingerprint,
+                        "instance": self.instance,
+                    })
             elif method == "POST":
                 if path == "/api/heartbeat":
                     return self._json({"ok": True})
@@ -533,6 +562,12 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({**self.service.list(), "redone": label})
                 if path == "/api/shutdown":
                     self.activity.stop()
+                    return self._json({"ok": True})
+                if path == "/api/restart":
+                    # Ein losgeloester neuer Prozess mit --restart beendet uns
+                    # selbst und uebernimmt den Port. Dieselbe Mechanik wie
+                    # beim Doppelklick nach einer Codeaenderung.
+                    spawn_replacement()
                     return self._json({"ok": True})
             elif method == "PUT":
                 if path == "/api/config":
@@ -602,6 +637,28 @@ class Activity:
             threading.Thread(target=self._httpd.shutdown, daemon=True).start()
 
 
+def spawn_replacement() -> None:
+    """Startet eine neue, losgeloeste Instanz, die diese hier abloest.
+
+    Der Kindprozess darf uns ueberleben, deshalb ohne Prozessgruppe und
+    ohne offene Handles - sonst stirbt er mit uns, bevor er den Port
+    uebernehmen kann.
+    """
+    exe = Path(sys.executable)
+    quiet = exe.with_name("pythonw.exe")
+    flags = {}
+    if os.name == "nt":
+        flags["creationflags"] = 0x00000008 | 0x00000200   # DETACHED | NEW_GROUP
+    else:
+        flags["start_new_session"] = True
+    subprocess.Popen(
+        [str(quiet if quiet.is_file() else exe), "-m", "app", "--window", "none", "--restart"],
+        cwd=str(config.ROOT),
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
+        **flags,
+    )
+
+
 def build(cfg: dict) -> tuple[ThreadingHTTPServer, Activity]:
     service = TaskService(
         LocalFileStore(cfg["data"]["path"]),
@@ -614,6 +671,7 @@ def build(cfg: dict) -> tuple[ThreadingHTTPServer, Activity]:
         "activity": activity,
         # Einmalig beim Start festhalten - siehe /api/version.
         "fingerprint": config.fingerprint(),
+        "instance": f"{os.getpid()}-{time.time_ns()}",
     })
     httpd = ThreadingHTTPServer((cfg["server"]["host"], cfg["server"]["port"]), handler)
     activity.attach(httpd)

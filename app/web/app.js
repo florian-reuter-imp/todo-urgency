@@ -379,15 +379,73 @@ function rowFor(task) {
       ? el("span", { class: "badge snoozed", text: `🛫 ab ${task.start}` })
       : (due ? el("span", { class: `badge ${due.cls}`, text: due.text }) : null),
     el("span", { class: "score", title: breakdownText(task), text: task.score.toFixed(1) }),
+    !isReadOnly() && !task.done && task.due
+      ? el("button", {
+          class: "icon-btn", title: "Aufschieben – die Frist selbst verschieben",
+          text: "⏭", onclick: (e) => openPostponeMenu(task, e.currentTarget),
+        }) : null,
     !isReadOnly() && !task.done
       ? el("button", {
-          class: "icon-btn", title: "Eine Woche zurückstellen", text: "🛫",
-          onclick: () => patch(task, { snooze_days: 7 }),
+          class: "icon-btn", title: "Eine Woche zurückstellen – Frist bleibt, nur ausgeblendet",
+          text: "🛫", onclick: () => patch(task, { snooze_days: 7 }),
         }) : null,
     !isReadOnly() ? el("button", { class: "icon-btn", title: "Bearbeiten", text: "✎", onclick: startEdit }) : null,
     !isReadOnly() ? el("button", { class: "icon-btn danger", title: "Löschen", text: "✕", onclick: () => remove(task) }) : null,
   ].filter(Boolean));
   return row;
+}
+
+// --- Aufschieben ------------------------------------------------------
+const WEEKDAY = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+const POSTPONE_WEEKS = [1, 2, 4];
+
+/** Wo landet die Frist, und wie liegt sie dann zu heute? */
+function postponePreview(task, weeks, today) {
+  const target = new Date(task.due + "T00:00:00");
+  target.setDate(target.getDate() + weeks * 7);
+  const days = Math.round((target - new Date(today + "T00:00:00")) / 86400000);
+  const stamp = `${WEEKDAY[target.getDay()]} ${String(target.getDate()).padStart(2, "0")}.`
+    + `${String(target.getMonth() + 1).padStart(2, "0")}.`;
+  const where = days > 1 ? `in ${days} Tagen`
+    : days === 1 ? "morgen"
+    : days === 0 ? "heute"
+    : `${-days} Tage überfällig`;
+  return { stamp, where, overdue: days < 0 };
+}
+
+/**
+ * Kleines Menü am Knopf. Zeigt das Ergebnis VOR dem Klick, damit auch der
+ * stumpfe Fall sichtbar ist: bei langem Verzug landet "+1 Woche" immer noch
+ * in der Vergangenheit. Lieber zeigen als wegregeln.
+ */
+function openPostponeMenu(task, anchor) {
+  closePopup();
+  const today = state.data.today;
+  const popup = el("div", { class: "menu popup" },
+    POSTPONE_WEEKS.map((weeks) => {
+      const info = postponePreview(task, weeks, today);
+      return el("button", {
+        type: "button",
+        onclick: async () => { closePopup(); await patch(task, { postpone_weeks: weeks }); },
+      }, [
+        document.createTextNode(`+${weeks} Woche${weeks === 1 ? "" : "n"}`),
+        el("small", {
+          class: info.overdue ? "still-overdue" : "",
+          text: `→ ${info.stamp}  ${info.where}`,
+        }),
+      ]);
+    }),
+  );
+  document.body.append(popup);
+
+  const box = anchor.getBoundingClientRect();
+  popup.style.top = `${Math.min(box.bottom + 6, window.innerHeight - popup.offsetHeight - 8)}px`;
+  popup.style.left = `${Math.max(8, Math.min(box.right - popup.offsetWidth, window.innerWidth - popup.offsetWidth - 8))}px`;
+  setTimeout(() => document.addEventListener("click", closePopup, { once: true }), 0);
+}
+
+function closePopup() {
+  document.querySelector(".popup")?.remove();
 }
 
 function editFor(task) {
@@ -966,6 +1024,126 @@ function initWeights() {
   });
 }
 
+// --- Fenster und Server ----------------------------------------------
+/** Vollflächige Meldung: ab hier ist nichts mehr bedienbar. */
+function showGone(title, hint, retryUrl) {
+  hideToast();
+  const box = el("div", { class: "gone" }, [
+    el("strong", { text: title }),
+    el("p", { class: "hint", text: hint }),
+    retryUrl ? el("button", {
+      class: "ghost", text: "Fenster schließen", onclick: closeWindow,
+    }) : null,
+  ].filter(Boolean));
+  document.body.replaceChildren(box);
+}
+
+/**
+ * Fensterhöhe auf den Listeninhalt zuschneiden.
+ *
+ * `scrollHeight` taugt dafür nicht: es meldet nie weniger als die sichtbare
+ * Höhe, erkennt also ein zu GROSSES Fenster nicht. Deshalb wird die
+ * Unterkante der letzten Zeile gemessen.
+ */
+function fitWindowToContent() {
+  if (state.view !== "list") {
+    toast("Das geht nur in der Liste – die Matrix füllt immer das ganze Fenster.",
+      null, null, true);
+    return;
+  }
+  const list = $("#view-list");
+  const last = list.lastElementChild;
+  if (!last) { toast("Nichts da, woran sich etwas anpassen ließe."); return; }
+
+  const top = list.getBoundingClientRect().top;
+  const content = last.getBoundingClientRect().bottom - top + list.scrollTop + 6;
+  const delta = Math.round(content - list.clientHeight);
+  if (Math.abs(delta) < 6) { toast("Passt schon."); return; }
+
+  const before = window.outerHeight;
+  const target = clamp(before + delta, 360, screen.availHeight);
+  window.resizeTo(window.outerWidth, target);
+  setTimeout(() => {
+    if (Math.abs(window.outerHeight - before) < 6) {
+      toast("Dieses Fenster lässt sich nicht per Knopf verkleinern – das geht nur "
+        + "im App-Fenster oder in der installierten App.", null, null, true);
+    }
+  }, 250);
+}
+
+/** Versucht, das App-Fenster zu schließen. Der Server bleibt davon unberührt. */
+function closeWindow() {
+  window.close();
+  // Chromium lässt window.close() nur für eigene bzw. App-Fenster zu.
+  // Hat es nicht geklappt, sind wir nach einem Tick noch da.
+  setTimeout(() => {
+    toast("Dieses Fenster lässt sich nicht per Knopf schließen – "
+      + "bitte oben rechts schließen. Der Server läuft weiter.", null, null, true);
+  }, 300);
+}
+
+const instanceId = async () => {
+  const res = await fetch("/api/version", { cache: "no-store" });
+  return res.ok ? (await res.json()).instance : null;
+};
+
+async function restartServer() {
+  const button = $("#app-menu-toggle");
+  button.disabled = true;
+  setStatus("Server startet neu …");
+
+  // Kennung des JETZIGEN Prozesses merken: der alte Server antwortet noch
+  // einen Moment weiter, und ein Neuladen gegen ihn liefe ins Leere.
+  let previous = null;
+  try { previous = await instanceId(); } catch { /* egal */ }
+
+  try {
+    await api("/api/restart", { method: "POST" });
+  } catch { /* der Server kann beim Abschied schon weg sein */ }
+
+  for (let i = 0; i < 60; i++) {
+    await new Promise((r) => setTimeout(r, 500));
+    try {
+      const now = await instanceId();
+      if (now && now !== previous) { location.reload(); return; }
+    } catch { /* noch nicht da */ }
+  }
+  button.disabled = false;
+  setStatus("");
+  showGone("Der Neustart hat zu lange gedauert.",
+    "Bitte das Fenster schließen und die Verknüpfung erneut anklicken.");
+}
+
+async function quitServer() {
+  if (!confirm("Server beenden? Das Tool ist dann erst nach einem Neustart "
+    + "wieder erreichbar – und der Verlauf für Rückgängig ist weg.")) return;
+  try {
+    await api("/api/shutdown", { method: "POST" });
+  } catch { /* beim Abschied antwortet er eventuell nicht mehr */ }
+  await new Promise((r) => setTimeout(r, 400));
+  showGone("Server beendet.",
+    "Zum Weiterarbeiten die Verknüpfung „Todo“ anklicken.", true);
+}
+
+function initAppMenu() {
+  const toggle = $("#app-menu-toggle");
+  const menu = $("#app-menu");
+  const setOpen = (open) => { menu.hidden = !open; toggle.classList.toggle("is-active", open); };
+
+  toggle.addEventListener("click", (e) => { e.stopPropagation(); setOpen(menu.hidden); });
+  document.addEventListener("click", () => setOpen(false));
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") setOpen(false); });
+  menu.addEventListener("click", (e) => {
+    const action = e.target.closest("button")?.dataset.action;
+    if (!action) return;
+    setOpen(false);
+    if (action === "fit") fitWindowToContent();
+    else if (action === "close") closeWindow();
+    else if (action === "restart") restartServer();
+    else if (action === "quit") quitServer();
+  });
+}
+
 // --- Zeitreise -------------------------------------------------------
 let timeTimer = null;
 function initTimeTravel() {
@@ -987,6 +1165,10 @@ function initTimeTravel() {
 function setView(name, remember = true) {
   state.view = name;
   state.editing = null;
+  // Die Kompaktstufen im CSS haengen an der Ansicht, nicht nur an der
+  // Fensterhoehe: nur die Matrix braucht die Hoehe wirklich.
+  document.body.classList.toggle("view-list", name === "list");
+  document.body.classList.toggle("view-matrix", name === "matrix");
   // Ansicht in der Adresse merken: uebersteht einen Reload und macht die
   // Matrix direkt verlinkbar.
   if (remember && location.hash !== `#${name}`) history.replaceState(null, "", `#${name}`);
@@ -1071,9 +1253,24 @@ document.addEventListener("keydown", (e) => {
 initMatrixDrag();
 initWeights();
 initTimeTravel();
+initAppMenu();
 setView(location.hash === "#matrix" ? "matrix" : "list");
 
-setInterval(() => fetch("/api/heartbeat", { method: "POST" }).catch(() => {}), 30000);
+// Heartbeat, und zugleich die Prüfung, ob der Server inzwischen ein
+// anderer ist. Nach einem Neustart läuft dieses Fenster sonst mit altem
+// JavaScript weiter und sieht neue Funktionen nicht – genau die Falle,
+// die vorher nur durch F5 zu beheben war.
+let ownInstance = null;
+instanceId().then((id) => { ownInstance = id; }).catch(() => {});
+
+setInterval(async () => {
+  fetch("/api/heartbeat", { method: "POST" }).catch(() => {});
+  if (!ownInstance || state.editing || drag) return;
+  try {
+    const now = await instanceId();
+    if (now && now !== ownInstance) location.reload();
+  } catch { /* Server gerade weg - beim nächsten Mal wieder */ }
+}, 30000);
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden && !state.editing && !drag) load().catch(() => {});
 });

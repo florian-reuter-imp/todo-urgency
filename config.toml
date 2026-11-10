@@ -11,8 +11,12 @@ file = "todo.md"
 [server]
 host = "127.0.0.1"
 port = 8777
-# Server beendet sich nach so vielen Minuten ohne offenen Tab.
-idle_shutdown_minutes = 20
+# Server beendet sich nach so vielen Minuten ohne offenes Fenster.
+# 0 = laeuft durch (Default). Wie ein Kalender: den ganzen Tag bereit,
+# oeffnet sich auf Klick sofort. Nur sinnvoll zu setzen, wenn der Server
+# NICHT im Autostart liegt - sonst waere er nach dem Abschalten bis zum
+# naechsten Anmelden weg.
+idle_shutdown_minutes = 0
 
 [window]
 # Sollgroesse des App-Fensters beim Start: Breite,Hoehe in Pixeln.

@@ -23,6 +23,15 @@
         <button id="redo" class="ghost" disabled title="Wiederholen (Strg+Y)">↷</button>
       </span>
       <button id="weights-toggle" class="ghost" title="Gewichte der Formel anpassen">⚙ Gewichte</button>
+      <span class="menu-wrap">
+        <button id="app-menu-toggle" class="ghost" title="Fenster und Server">⏻</button>
+        <div id="app-menu" class="menu" hidden>
+          <button type="button" data-action="fit">Fenster an Inhalt anpassen<small>Höhe auf die Liste zuschneiden</small></button>
+          <button type="button" data-action="close">Fenster schließen<small>Server läuft weiter</small></button>
+          <button type="button" data-action="restart">Server neu starten<small>lädt geänderten Code</small></button>
+          <button type="button" data-action="quit">Server beenden<small>bis zum nächsten Start weg</small></button>
+        </div>
+      </span>
       <span id="status" class="status"></span>
     </header>
 

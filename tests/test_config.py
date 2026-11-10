@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 import tempfile
+import threading
 import tomllib
 import unittest
 from datetime import date
@@ -11,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import config  # noqa: E402
+from app import autostart, config, server  # noqa: E402
 from test_core import service_on  # noqa: E402
 
 SAMPLE = """\
@@ -171,6 +172,48 @@ class TestWeightTuning(unittest.TestCase):
             svc.preview({"due": {"coefficient": "viel"}})
         with self.assertRaises(ValueError):
             svc.preview({"due": {"coefficient": True}})
+
+
+class TestIdleShutdown(unittest.TestCase):
+    def test_default_runs_forever(self):
+        """Wie ein Kalender: den ganzen Tag bereit."""
+        self.assertEqual(config.DEFAULTS["server"]["idle_shutdown_minutes"], 0)
+
+    def test_zero_starts_no_watchdog(self):
+        activity = server.Activity(0)
+        self.assertEqual(activity.timeout, 0)
+        before = threading.active_count()
+        activity.attach(None)
+        self.assertEqual(threading.active_count(), before)
+
+    def test_positive_value_starts_a_watchdog(self):
+        activity = server.Activity(5)
+        self.assertEqual(activity.timeout, 300)
+        before = threading.active_count()
+        activity.attach(None)
+        self.assertEqual(threading.active_count(), before + 1)
+
+
+class TestAutostart(unittest.TestCase):
+    def test_server_only_by_default(self):
+        self.assertEqual(autostart._arguments(False), "-m app --window none")
+
+    def test_with_window_opens_the_app(self):
+        self.assertEqual(autostart._arguments(True), "-m app")
+
+    def test_systemd_unit_is_complete(self):
+        unit = autostart._unit_text(False)
+        for needle in ("[Unit]", "[Service]", "[Install]", "ExecStart=",
+                       "WorkingDirectory=", "--window none", "WantedBy=default.target"):
+            self.assertIn(needle, unit)
+
+    def test_powershell_quoting_escapes_apostrophes(self):
+        self.assertEqual(autostart._ps_quote("C:\\Ordner's Pfad"), "'C:\\Ordner''s Pfad'")
+
+    def test_status_reports_a_path_either_way(self):
+        info = autostart.status()
+        self.assertIn("installed", info)
+        self.assertTrue(info["path"])
 
 
 if __name__ == "__main__":
