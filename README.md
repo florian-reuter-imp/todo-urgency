@@ -261,36 +261,24 @@ Anderer Speicherort (Syncthing, anderer Cloud-Ordner)? Nur `data.file` in
 
 ## Sicherheit: Herkunftsprüfung
 
-Ein Server auf `127.0.0.1` ist **nicht** automatisch privat. Jede Webseite, die
-im Browser offen ist, darf ihn anfunken. Der Browser verweigert ihr nur die
-*Antwort* — die *Wirkung* tritt trotzdem ein. Eine fremde Seite konnte deshalb
-Aufgaben anlegen und den Server beenden; über DNS-Rebinding (eigener Domainname,
-der auf `127.0.0.1` zeigt) wäre die Liste sogar lesbar gewesen.
-
-Der Server prüft daher jede Anfrage auf zwei Kopfzeilen:
-
-| Kopfzeile | Regel | wogegen |
-|---|---|---|
-| `Host` | muss einer der eigenen Namen sein (`127.0.0.1`, `localhost`, `::1` oder der eingestellte `server.host`) | DNS-Rebinding — schützt auch das *Lesen* |
-| `Origin` | bei ändernden Methoden (POST/PUT/PATCH/DELETE) muss Adresse **und Port** die eigene Herkunft sein | fremde Webseiten (CSRF) |
-
-Zusätzlich wird `Sec-Fetch-Site` ausgewertet: alles außer `same-origin` und
-`none` fliegt raus. Das greift auch, wenn kein `Origin` mitkommt.
+Ein Server auf `127.0.0.1` ist **nicht** automatisch privat: jede Webseite im
+Browser darf ihn anfunken. Der Server prüft deshalb bei jeder Anfrage, woher
+sie kommt — `Host` bei allen Methoden, `Origin` und `Sec-Fetch-Site` zusätzlich
+bei allem, was Daten ändert. Fremde Herkunft wird mit `403` abgewiesen.
 
 Ein **fehlender** `Origin` ist erlaubt, denn ein Browser darf ihn bei fremder
 Herkunft nicht weglassen — `curl`, Python und das eigene `--stop` schicken ihn
-nie mit. Abgewiesen wird mit `403`, und der Rumpf der Anfrage wird vorher
-verworfen: ungelesene Bytes im Socket führen sonst zu einem
-Verbindungsabbruch statt einer sauberen Antwort.
+nie mit.
 
-`tests/test_origin.py` stellt den Angriff nach — gleiche Adresse, anderer Port,
-`Content-Type: text/plain` (das ist der Trick: so fragt der Browser nicht
-vorher nach Erlaubnis).
+> Das Tool ist für **einen** Benutzer auf dem eigenen Rechner gedacht und hat
+> keine Authentifizierung. Wer bewusst im LAN lauschen lässt, trägt in
+> `config.toml` die konkrete IP-Adresse als `server.host` ein, nie `0.0.0.0` —
+> und sollte wissen, dass dann jeder im Netz mitschreiben darf.
 
-> Wer bewusst im LAN lauschen lässt, trägt in `config.toml` die **konkrete
-> IP-Adresse** als `server.host` ein, nicht `0.0.0.0` — sonst passt der
-> `Host`-Vergleich nicht. Eine Authentifizierung gibt es nicht; das Tool ist
-> für genau einen Benutzer auf dem eigenen Rechner gedacht.
+📄 **[SECURITY.md](SECURITY.md)** hat die ganze Geschichte: welche Lücke das
+Tool hatte, wie sie ausnutzbar war, wie der Fix aussieht und — vor allem — was
+er **nicht** abdeckt. Wer das Tool einsetzt, sollte das Restrisiko dort selbst
+nachlesen, statt es mir zu glauben.
 
 ## Priorisierung
 
