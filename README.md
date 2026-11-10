@@ -487,3 +487,8 @@ Speicherort.
 - CLI (`todo add`, `todo next`)
 - Auto-Übertrag verstrichener Fälligkeitsdaten
 - Dateisystem-Watcher (`watchdog`) statt mtime-Vergleich
+
+## Lizenz
+
+MIT - siehe [LICENSE](LICENSE). Kurz: jeder darf alles, der Copyright-Hinweis
+muss mit. Keine Gewaehrleistung.
