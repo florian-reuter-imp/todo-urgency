@@ -140,12 +140,12 @@ class TestUndoRedoStacks(unittest.TestCase):
         self.assertEqual(len(svc._undo), svc.UNDO_DEPTH)
 
     def test_labels_describe_the_step(self):
-        svc, _ = service_on("- [ ] dfg antrag\n")
+        svc, _ = service_on("- [ ] Beispielaufgabe\n")
         svc.delete(first_uid(svc))
-        self.assertIn("dfg antrag", svc.history()["undo"]["label"])
+        self.assertIn("Beispielaufgabe", svc.history()["undo"]["label"])
         self.assertIn("geloescht", svc.history()["undo"]["label"])
         svc.undo()
-        self.assertIn("dfg antrag", svc.history()["redo"]["label"])
+        self.assertIn("Beispielaufgabe", svc.history()["redo"]["label"])
 
 
 class TestForeignEdits(unittest.TestCase):

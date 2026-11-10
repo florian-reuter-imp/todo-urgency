@@ -259,6 +259,39 @@ die API mit `409` und die Oberfläche lädt neu, statt fremde Änderungen zu üb
 Anderer Speicherort (Syncthing, anderer Cloud-Ordner)? Nur `data.file` in
 `config.toml` ändern — am Code ändert sich nichts.
 
+## Sicherheit: Herkunftsprüfung
+
+Ein Server auf `127.0.0.1` ist **nicht** automatisch privat. Jede Webseite, die
+im Browser offen ist, darf ihn anfunken. Der Browser verweigert ihr nur die
+*Antwort* — die *Wirkung* tritt trotzdem ein. Eine fremde Seite konnte deshalb
+Aufgaben anlegen und den Server beenden; über DNS-Rebinding (eigener Domainname,
+der auf `127.0.0.1` zeigt) wäre die Liste sogar lesbar gewesen.
+
+Der Server prüft daher jede Anfrage auf zwei Kopfzeilen:
+
+| Kopfzeile | Regel | wogegen |
+|---|---|---|
+| `Host` | muss einer der eigenen Namen sein (`127.0.0.1`, `localhost`, `::1` oder der eingestellte `server.host`) | DNS-Rebinding — schützt auch das *Lesen* |
+| `Origin` | bei ändernden Methoden (POST/PUT/PATCH/DELETE) muss Adresse **und Port** die eigene Herkunft sein | fremde Webseiten (CSRF) |
+
+Zusätzlich wird `Sec-Fetch-Site` ausgewertet: alles außer `same-origin` und
+`none` fliegt raus. Das greift auch, wenn kein `Origin` mitkommt.
+
+Ein **fehlender** `Origin` ist erlaubt, denn ein Browser darf ihn bei fremder
+Herkunft nicht weglassen — `curl`, Python und das eigene `--stop` schicken ihn
+nie mit. Abgewiesen wird mit `403`, und der Rumpf der Anfrage wird vorher
+verworfen: ungelesene Bytes im Socket führen sonst zu einem
+Verbindungsabbruch statt einer sauberen Antwort.
+
+`tests/test_origin.py` stellt den Angriff nach — gleiche Adresse, anderer Port,
+`Content-Type: text/plain` (das ist der Trick: so fragt der Browser nicht
+vorher nach Erlaubnis).
+
+> Wer bewusst im LAN lauschen lässt, trägt in `config.toml` die **konkrete
+> IP-Adresse** als `server.host` ein, nicht `0.0.0.0` — sonst passt der
+> `Host`-Vergleich nicht. Eine Authentifizierung gibt es nicht; das Tool ist
+> für genau einen Benutzer auf dem eigenen Rechner gedacht.
+
 ## Priorisierung
 
 Der Score ist in zwei Achsen zerlegt, deren Summe der Listen-Score ist:
@@ -402,7 +435,7 @@ dafür gibt es die Vorschau und „Auslieferungswerte“.
 python -m unittest discover tests
 ```
 
-136 Tests, nur Stdlib. Sie deckten beim Schreiben zwei stille Datenverluste auf:
+154 Tests, nur Stdlib. Sie deckten beim Schreiben zwei stille Datenverluste auf:
 die Rohzeilen-Bearbeitung schrieb nicht, und Text **nach** einem Datumsfeld
 (`📅 2026-10-20 #projekt`) ging beim Parsen verloren. Beide sind als
 Regressionstests festgehalten.
@@ -433,7 +466,7 @@ Drei unabhängig austauschbare Schichten:
 | [app/config.py](app/config.py) | `config.toml` lesen und kommentarerhaltend schreiben |
 | [app/server.py](app/server.py) | HTTP-API + Auslieferung der Oberfläche |
 | [app/web/](app/web/) | Vanilla-JS-Oberfläche, kein Build-Schritt |
-| [tests/](tests/) | 136 Tests, `python -m unittest discover tests` |
+| [tests/](tests/) | 154 Tests, `python -m unittest discover tests` |
 
 Die Feld-Emojis in `codec.py` stehen bewusst als Escape-Sequenzen (`"\U0001f4c5"`)
 und der Block ist reines ASCII — sonst zerschießt irgendwann ein Werkzeug mit

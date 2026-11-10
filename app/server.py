@@ -456,6 +456,14 @@ def _as_json(s: Scored) -> dict:
     }
 
 
+#: Namen, unter denen der Server sich selbst erkennt.
+LOOPBACK_NAMES = frozenset({"127.0.0.1", "localhost", "::1"})
+
+#: Methoden, die Daten aendern. Nur fuer sie wird die Herkunft geprueft -
+#: lesende Anfragen schuetzt schon der Host-Vergleich.
+WRITING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
 class Handler(BaseHTTPRequestHandler):
     service: TaskService
     activity: "Activity"
@@ -463,7 +471,53 @@ class Handler(BaseHTTPRequestHandler):
     fingerprint: str = ""
     #: Kennung dieses Prozesses, wechselt bei jedem Neustart.
     instance: str = ""
+    #: Adressen, unter denen dieser Server erreichbar sein soll.
+    allowed_hosts: frozenset[str] = LOOPBACK_NAMES
+    #: Eigener Port - Teil der eigenen Herkunft.
+    own_port: int = 0
     server_version = "TodoTool/0.1"
+
+    # -- Herkunft -------------------------------------------------------
+    # Ein Server auf 127.0.0.1 ist nicht automatisch privat: jede Webseite
+    # im Browser kann ihn anfunken. Der Browser verhindert nur, dass sie
+    # die ANTWORT liest - die Wirkung tritt trotzdem ein. Ohne die beiden
+    # Pruefungen hier koennte eine fremde Seite Aufgaben anlegen oder den
+    # Server beenden.
+
+    def _host_ok(self) -> bool:
+        """Wurde der Server unter einem seiner eigenen Namen angesprochen?
+
+        Sonst hat jemand einen eigenen Domainnamen auf 127.0.0.1 zeigen
+        lassen (DNS-Rebinding). Der Browser haelt seine Seite dann fuer
+        gleicher Herkunft und gibt ihr auch die Antworten - damit waere
+        die Aufgabenliste lesbar.
+        """
+        host = self.headers.get("Host")
+        if not host:
+            return True  # HTTP/1.0 oder ein Kommandozeilenwerkzeug
+        name = urlparse("//" + host).hostname or ""
+        return name.lower() in self.allowed_hosts
+
+    def _origin_ok(self) -> bool:
+        """Darf diese Herkunft Daten aendern?
+
+        Fehlt der Origin, ist keine Webseite der Absender: ein Browser
+        darf ihn bei fremder Herkunft nicht weglassen, `curl` und das
+        eigene `--stop` schicken ihn nie mit.
+        """
+        site = (self.headers.get("Sec-Fetch-Site") or "").lower()
+        if site and site not in ("same-origin", "none"):
+            return False
+        origin = self.headers.get("Origin")
+        if origin is None:
+            return True
+        parsed = urlparse(origin)
+        name = (parsed.hostname or "").lower()
+        try:
+            port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        except ValueError:
+            return False
+        return name in self.allowed_hosts and port == self.own_port
 
     def log_message(self, fmt: str, *args) -> None:
         pass  # leiser Server
@@ -483,6 +537,21 @@ class Handler(BaseHTTPRequestHandler):
         if not length:
             return {}
         return json.loads(self.rfile.read(length).decode("utf-8"))
+
+    def _drain(self) -> None:
+        """Rumpf der Anfrage wegwerfen, bevor wir sie ablehnen.
+
+        Ohne das bleiben die Bytes ungelesen im Socket stehen. Schliesst
+        der Server die Verbindung dann, schickt das Betriebssystem ein
+        RST - und der Absender sieht einen Verbindungsabbruch statt der
+        403, die wir ihm eigentlich schicken.
+        """
+        length = int(self.headers.get("Content-Length") or 0)
+        while length > 0:
+            chunk = self.rfile.read(min(length, 65536))
+            if not chunk:
+                break
+            length -= len(chunk)
 
     def _static(self, name: str) -> None:
         path = (WEB_DIR / name).resolve()
@@ -510,6 +579,14 @@ class Handler(BaseHTTPRequestHandler):
             raise ValueError("today muss YYYY-MM-DD sein, war: " + values[0])
 
     def _dispatch(self, method: str) -> None:
+        # Vor allem anderen - auch vor touch(), damit eine fremde Seite den
+        # Server nicht am Leben halten kann.
+        if not self._host_ok() or (method in WRITING_METHODS and not self._origin_ok()):
+            self._drain()
+            return self._json(
+                {"error": "Abgewiesen: Anfrage kommt nicht von dieser Oberflaeche."},
+                HTTPStatus.FORBIDDEN,
+            )
         self.activity.touch()
         parsed = urlparse(self.path)
         path = parsed.path
@@ -672,6 +749,10 @@ def build(cfg: dict) -> tuple[ThreadingHTTPServer, Activity]:
         # Einmalig beim Start festhalten - siehe /api/version.
         "fingerprint": config.fingerprint(),
         "instance": f"{os.getpid()}-{time.time_ns()}",
+        # Eigene Herkunft: die Loopback-Namen plus die eingestellte
+        # Adresse, falls jemand bewusst woanders lauschen laesst.
+        "allowed_hosts": LOOPBACK_NAMES | {str(cfg["server"]["host"]).lower()},
+        "own_port": int(cfg["server"]["port"]),
     })
     httpd = ThreadingHTTPServer((cfg["server"]["host"], cfg["server"]["port"]), handler)
     activity.attach(httpd)
