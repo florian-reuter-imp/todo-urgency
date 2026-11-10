@@ -1,0 +1,13 @@
+# Zeilenenden normalisieren: im Repo LF, in der Arbeitskopie
+# plattformtypisch. Ohne das landen unter Windows CRLF im Repo und jeder
+# Diff von einem Linux-Rechner faerbt die ganze Datei um.
+* text=auto
+
+# Shell-Skripte muessen auch unter Windows LF behalten - ein CR hinter der
+# Shebang-Zeile macht sie unter Linux unausfuehrbar.
+*.sh text eol=lf
+
+# Batch-Dateien umgekehrt: cmd.exe will CRLF.
+*.cmd text eol=crlf
+
+*.ico binary
